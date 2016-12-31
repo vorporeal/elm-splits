@@ -31,7 +31,7 @@ type alias Split =
 type alias Model =
   { isRunning : Bool
   , elapsedTime : Time
-  , lastTickTime : Maybe Time
+  , lastTickTime : Time
   , activeSplit : ActiveSplit
   , splits : List Split
   }
@@ -39,12 +39,17 @@ type alias Model =
 
 init : (Model, Cmd Msg)
 init =
-  (emptyModel, Cmd.none)
+  initModel
+  
+  
+initModel : (Model, Cmd Msg)
+initModel =
+  emptyModel ! [Task.perform SetLastTickTime Time.now] 
   
   
 emptyModel : Model
 emptyModel =
-  Model False 0 Nothing Unstarted []
+  Model False 0 0 Unstarted []
 
 
 
@@ -63,48 +68,33 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     StartTimer ->
-      let
-        -- Ensure a started timer is marked as running.
-        newModel = { model | isRunning = True }
-      in
-        -- If we don't know when the last tick occurred, set it to
-        -- the current time, so that the next tick actually starts
-        -- updating the timer.
-        case model.lastTickTime of
-          Nothing ->
-            (newModel, Task.perform SetLastTickTime Time.now)
-          Just _ ->
-            (newModel, Cmd.none)
+      { model | isRunning = True } ! []
     
     StopTimer ->
       -- Stop the timer and unset the last tick time, as when we restart
       -- the timer, we don't want to include all of the time that elapsed
       -- while the timer was paused.
-      ({ model | isRunning = False
-               , lastTickTime = Nothing }
-       , Cmd.none)
+      { model | isRunning = False } ! []
       
     SetLastTickTime time ->
-      ({ model | lastTickTime = Just time }, Cmd.none)
+      { model | lastTickTime = time } ! []
 
     Tick time ->
-      if model.isRunning then
-        -- If we're running but don't know when the last tick was,
-        -- the current tick was the last tick.  Otherwise, update
-        -- the timer based on the interval between this tick and the
-        -- last one.
-        case model.lastTickTime of
-          Nothing ->
-            ({ model | lastTickTime = Just time }, Cmd.none)
-          Just lastTickTime ->
-            ({ model | elapsedTime = model.elapsedTime + (time - lastTickTime)
-                     , lastTickTime = Just time }
-            , Cmd.none)
-      else
-        (model, Cmd.none)
+      let
+        dt = time - model.lastTickTime
+
+        elapsedTime =
+            if model.isRunning then
+              model.elapsedTime + dt
+            else
+              model.elapsedTime
+      in
+        { model | elapsedTime = elapsedTime
+                , lastTickTime = time }
+            ! []
     
     ResetTimer ->
-      (emptyModel, Cmd.none)
+      initModel
 
 
 
@@ -122,7 +112,7 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
   div [style [("color", "#333"), ("font", "24px monospace")]]
-    [ text <| formatTimer model
+    [ text <| viewTimer model
     , br [] []
     , button [onClick StartTimer] [ text "Start timer" ]
     , button [onClick StopTimer] [ text "Pause timer" ]
@@ -130,8 +120,8 @@ view model =
     ]
 
 
-formatTimer : Model -> String
-formatTimer model =
+viewTimer : Model -> String
+viewTimer model =
   formatDuration model.elapsedTime
       
 formatDuration : Time -> String
