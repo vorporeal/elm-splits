@@ -49,7 +49,10 @@ initModel =
   
 emptyModel : Model
 emptyModel =
-  Model False 0 0 Unstarted [ Split "split" 67800 67800 ]
+  Model False 0 0 Unstarted
+    [ Split "split 1" 67800 67800
+    , Split "split 2" 89000 21200
+    ]
 
 
 
@@ -57,7 +60,7 @@ emptyModel =
 
 
 type Msg
-    = StartTimer
+    = StartTimerOrSplit
     | StopTimer
     | SetLastTickTime Time
     | Tick Time
@@ -67,8 +70,30 @@ type Msg
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    StartTimer ->
-      { model | isRunning = True } ! []
+    StartTimerOrSplit ->
+      let
+        activeSplit =
+          case model.activeSplit of
+            Unstarted ->
+              SplitIndex 0
+            SplitIndex index ->
+              if index == List.length model.splits - 1 then
+                Done
+              else
+                SplitIndex (index + 1)
+            Done ->
+              Done
+              
+        isRunning =
+          case activeSplit of
+            SplitIndex _ ->
+              True
+            _ ->
+              False
+      in
+        { model | isRunning = isRunning
+                , activeSplit = activeSplit}
+            ! []
     
     StopTimer ->
       -- Stop the timer and unset the last tick time, as when we restart
@@ -113,11 +138,11 @@ view : Model -> Html Msg
 view model =
   div [ style [("width", "400px")] ]
   [ div [style [("background", "#eee")]]
-      [ viewSplitList model.splits
+      [ viewSplitList model.splits model.activeSplit
       , div [style [("border-top", "1px solid #ddd")]] [ viewTimer model ]
       ]
   , br [] []
-  , button [onClick StartTimer] [ text "Start timer" ]
+  , button [onClick StartTimerOrSplit] [ text "Start timer" ]
   , button [onClick StopTimer] [ text "Pause timer" ]
   , button [onClick ResetTimer] [ text "Reset timer" ]
   ]
@@ -132,17 +157,31 @@ viewTimer model =
     [ text <| formatDuration model.elapsedTime ]
     
 
-viewSplitList : List Split -> Html msg
-viewSplitList splits =
-  div [] <| List.map viewSplit splits
+viewSplitList : List Split -> ActiveSplit -> Html msg
+viewSplitList splits activeSplit =
+  identity splits |> List.indexedMap (viewSplit activeSplit) |> div []
     
     
-viewSplit : Split -> Html msg
-viewSplit split =
-  div [ flexRow "center" "space-between", style [("padding", "8px")] ]
+viewSplit : ActiveSplit -> Int -> Split -> Html msg
+viewSplit activeSplit index split =
+  div (splitStyles activeSplit index)
     [ span [] [text split.name]
     , span [] [text <| formatDuration split.endTime]
     ]
+    
+splitStyles : ActiveSplit -> Int -> List (Attribute msg)
+splitStyles activeSplit index =
+  let
+    baseStyles = [ flexRow "center" "space-between", style [("padding", "8px")] ]
+  in
+    case activeSplit of
+      SplitIndex activeIndex ->
+        if activeIndex == index then
+          style [("background", "#bbb")] :: baseStyles
+        else
+          baseStyles
+      _ ->
+        baseStyles
 
 
 flexRow : String -> String -> Attribute msg
