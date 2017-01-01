@@ -22,9 +22,12 @@ main =
 type ActiveSplit = Unstarted | SplitIndex Int | Done
 
 type alias Split =
-  { name : String
+  { index : Int
+  , name : String
   , endTime : Time
   , duration : Time
+  , currentAttemptEndTime : Maybe Time
+  , currentAttemptDuration : Maybe Time
   }
 
 
@@ -44,14 +47,14 @@ init =
   
 initModel : (Model, Cmd Msg)
 initModel =
-  emptyModel ! [Task.perform SetLastTickTime Time.now] 
+  emptyModel ! [Task.perform SetLastTickTime Time.now]
   
   
 emptyModel : Model
 emptyModel =
   Model False 0 0 Unstarted
-    [ Split "split 1" 67800 67800
-    , Split "split 2" 89000 21200
+    [ Split 0 "split 1" 67800 67800 Nothing Nothing
+    , Split 1 "split 2" 89000 21200 Nothing Nothing
     ]
 
 
@@ -90,9 +93,12 @@ update msg model =
               True
             _ ->
               False
+              
+        splits = advanceSplits model
       in
         { model | isRunning = isRunning
-                , activeSplit = activeSplit}
+                , activeSplit = activeSplit
+                , splits = splits}
             ! []
     
     StopTimer ->
@@ -120,6 +126,29 @@ update msg model =
     
     ResetTimer ->
       initModel
+      
+      
+advanceSplits : Model -> List Split
+advanceSplits model =
+  case model.activeSplit of
+    SplitIndex index ->
+      let
+        updateSplit : Split -> Split -> Split
+        updateSplit split prevSplit =
+          if split.index == index then
+            let
+              prevEndTime = Maybe.withDefault 0 prevSplit.currentAttemptEndTime
+            in
+              { split | currentAttemptEndTime = Just model.elapsedTime
+                      , currentAttemptDuration = Just (model.elapsedTime - prevEndTime) }
+          else
+            split
+      in
+        List.scanl updateSplit (Split 0 "" 0 0 Nothing Nothing) model.splits
+            |> List.tail
+            |> Maybe.withDefault []
+    _ ->
+      model.splits
 
 
 
@@ -159,15 +188,44 @@ viewTimer model =
 
 viewSplitList : List Split -> ActiveSplit -> Html msg
 viewSplitList splits activeSplit =
-  identity splits |> List.indexedMap (viewSplit activeSplit) |> div []
+  identity splits
+      |> List.indexedMap (viewSplit activeSplit)
+      |> div []
     
     
 viewSplit : ActiveSplit -> Int -> Split -> Html msg
 viewSplit activeSplit index split =
-  div (splitStyles activeSplit index)
-    [ span [] [text split.name]
-    , span [] [text <| formatDuration split.endTime]
-    ]
+  let
+    currentSplitDelta =
+      case split.currentAttemptDuration of
+        Just duration ->
+          Just (duration - split.duration)
+        Nothing ->
+          Nothing
+
+    splitDeltaStyles : Time -> List (Attribute msg)
+    splitDeltaStyles delta =
+      if delta < 0 then
+        [style [("color", "green")]]
+      else
+        [style [("color", "red")]]
+    
+    deltaEl =
+      case currentSplitDelta of
+        Just delta ->
+          span (splitDeltaStyles delta) [text <| formatDelta delta]
+        Nothing ->
+          span [] []
+  in
+    div (splitStyles activeSplit index)
+      [ span [] [text split.name]
+      , div []
+        [ deltaEl
+        , span [style [("margin-left", "8px")]]
+          [text <| formatDuration
+                <| Maybe.withDefault split.endTime split.currentAttemptEndTime]
+        ]
+      ]
     
 splitStyles : ActiveSplit -> Int -> List (Attribute msg)
 splitStyles activeSplit index =
@@ -188,6 +246,14 @@ flexRow : String -> String -> Attribute msg
 flexRow align justify =
   style [("display", "flex"), ("flex-direction", "row"),
          ("align-items", align), ("justify-content", justify)]
+         
+         
+formatDelta : Time -> String
+formatDelta duration =
+  let
+    sign = (if duration > 0 then "+" else "-")
+  in
+    sign ++ (formatDuration <| abs duration)
 
       
 formatDuration : Time -> String
