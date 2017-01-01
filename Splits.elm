@@ -49,7 +49,7 @@ initModel =
   
 emptyModel : Model
 emptyModel =
-  Model False 0 0 Unstarted []
+  Model False 0 0 Unstarted [ Split "split" 67800 67800 ]
 
 
 
@@ -111,18 +111,45 @@ subscriptions model =
 
 view : Model -> Html Msg
 view model =
-  div [style [("color", "#333"), ("font", "24px monospace")]]
-    [ text <| viewTimer model
-    , br [] []
-    , button [onClick StartTimer] [ text "Start timer" ]
-    , button [onClick StopTimer] [ text "Pause timer" ]
-    , button [onClick ResetTimer] [ text "Reset timer" ]
+  div [ style [("width", "400px")] ]
+  [ div [style [("background", "#eee")]]
+      [ viewSplitList model.splits
+      , div [style [("border-top", "1px solid #ddd")]] [ viewTimer model ]
+      ]
+  , br [] []
+  , button [onClick StartTimer] [ text "Start timer" ]
+  , button [onClick StopTimer] [ text "Pause timer" ]
+  , button [onClick ResetTimer] [ text "Reset timer" ]
+  ]
+
+
+viewTimer : Model -> Html msg
+viewTimer model =
+  div
+    [ flexRow "center" "flex-end"
+    , style [("color", "#333"), ("font", "24px monospace"), ("padding", "8px")]
+    ]
+    [ text <| formatDuration model.elapsedTime ]
+    
+
+viewSplitList : List Split -> Html msg
+viewSplitList splits =
+  div [] <| List.map viewSplit splits
+    
+    
+viewSplit : Split -> Html msg
+viewSplit split =
+  div [ flexRow "center" "space-between", style [("padding", "8px")] ]
+    [ span [] [text split.name]
+    , span [] [text <| formatDuration split.endTime]
     ]
 
 
-viewTimer : Model -> String
-viewTimer model =
-  formatDuration model.elapsedTime
+flexRow : String -> String -> Attribute msg
+flexRow align justify =
+  style [("display", "flex"), ("flex-direction", "row"),
+         ("align-items", align), ("justify-content", justify)]
+
       
 formatDuration : Time -> String
 formatDuration duration =
