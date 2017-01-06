@@ -1,8 +1,10 @@
 -- A simple timer with splits for tracking speedruns.
 
+import AnimationFrame exposing (diffs)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onInput, onClick)
+import Html.Lazy exposing (..)
 import Time exposing (..)
 import Task exposing (..)
 
@@ -34,7 +36,6 @@ type alias Split =
 type alias Model =
   { isRunning : Bool
   , elapsedTime : Time
-  , lastTickTime : Time
   , activeSplit : ActiveSplit
   , splits : List Split
   }
@@ -46,13 +47,12 @@ init =
   
   
 initModel : (Model, Cmd Msg)
-initModel =
-  emptyModel ! [Task.perform SetLastTickTime Time.now]
+initModel = emptyModel ! []
   
   
 emptyModel : Model
 emptyModel =
-  Model False 0 0 Unstarted
+  Model False 0 Unstarted
     [ Split 0 "split 1" 67800 67800 Nothing Nothing
     , Split 1 "split 2" 89000 21200 Nothing Nothing
     ]
@@ -65,7 +65,6 @@ emptyModel =
 type Msg
     = StartTimerOrSplit
     | StopTimer
-    | SetLastTickTime Time
     | Tick Time
     | ResetTimer
 
@@ -106,23 +105,16 @@ update msg model =
       -- the timer, we don't want to include all of the time that elapsed
       -- while the timer was paused.
       { model | isRunning = False } ! []
-      
-    SetLastTickTime time ->
-      { model | lastTickTime = time } ! []
 
-    Tick time ->
+    Tick dt ->
       let
-        dt = time - model.lastTickTime
-
         elapsedTime =
             if model.isRunning then
               model.elapsedTime + dt
             else
               model.elapsedTime
       in
-        { model | elapsedTime = elapsedTime
-                , lastTickTime = time }
-            ! []
+        { model | elapsedTime = elapsedTime } ! []
     
     ResetTimer ->
       initModel
@@ -157,7 +149,7 @@ advanceSplits model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  Time.every millisecond Tick
+  AnimationFrame.diffs Tick
 
 
 -- VIEW
@@ -167,11 +159,18 @@ view : Model -> Html Msg
 view model =
   div [ style [("width", "400px")] ]
   [ div [style [("background", "#eee")]]
-      [ viewSplitList model.splits model.activeSplit
+      [ lazy2 viewSplitList model.splits model.activeSplit
       , div [style [("border-top", "1px solid #ddd")]] [ viewTimer model ]
       ]
   , br [] []
-  , button [onClick StartTimerOrSplit] [ text "Start timer" ]
+  , lazy viewControls model
+  ]
+
+
+viewControls : Model -> Html Msg
+viewControls model =
+  div []
+  [ button [onClick StartTimerOrSplit] [ text "Start timer" ]
   , button [onClick StopTimer] [ text "Pause timer" ]
   , button [onClick ResetTimer] [ text "Reset timer" ]
   ]
@@ -189,10 +188,10 @@ viewTimer model =
 viewSplitList : List Split -> ActiveSplit -> Html msg
 viewSplitList splits activeSplit =
   identity splits
-      |> List.indexedMap (viewSplit activeSplit)
+      |> List.indexedMap (lazy << viewSplit activeSplit)
       |> div []
-    
-    
+
+
 viewSplit : ActiveSplit -> Int -> Split -> Html msg
 viewSplit activeSplit index split =
   let
